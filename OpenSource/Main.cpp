@@ -8,6 +8,7 @@
 #define strcmpi _strcmpi
 
 HMODULE hGame = LoadLibrary("Game.dll");
+HMODULE hStorm = LoadLibrary("Storm.dll");
 
 unsigned short g_tcp_port;
 
@@ -26,17 +27,27 @@ BOOL WINAPI WSockBind_proxy(SOCKET s, const struct sockaddr FAR* name, int namel
 BOOL WINAPI WSockSendTo_proxy(SOCKET s, const char FAR* buf, int len, int flags, const struct sockaddr FAR* to, int tolen);
 HANDLE WINAPI CreateEventA_proxy(LPSECURITY_ATTRIBUTES lpEventAttributes, BOOL bManualReset, BOOL bInitialState, LPCSTR lpName);
 
+DWORD WINAPI StormGetFileSize_Proxy(HANDLE hFile, LPDWORD lpFileSizeHigh);
+
 //----------------------------------------------------------------------------------------------------------
 
 BOOL WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hInstPrev, LPSTR lpCmdLine, int nCmdShow)
 {
 	if (!hGame)
+	{
+		MessageBox(NULL, "Отсутствует Game.dll.", "Ошибка", MB_ICONERROR);
+
 		return FALSE;
+	}
 
 	FARPROC GameMain = GetProcAddress(hGame, "GameMain");
 
 	if (!GameMain)
+	{
+		MessageBox(NULL, "Невозможно запустить повреждённый Game.dll.", "Ошибка", MB_ICONERROR);
+
 		return FALSE;
+	}
 
 	CRedirector redirector;
 
@@ -58,6 +69,9 @@ BOOL WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hInstPrev, LPSTR lpCmdLine, i
 
 	if (redirector.setApiModule("kernel32.dll"))
 		redirector.redirect("CreateEventA", CreateEventA_proxy);
+
+	if (redirector.setApiModule(hStorm))
+		redirector.redirect(265, StormGetFileSize_Proxy);
 
 	StormOpenArchive("", NULL, NULL, NULL);
 
@@ -174,6 +188,29 @@ HANDLE WINAPI CreateEventA_proxy(LPSECURITY_ATTRIBUTES lpEventAttributes, BOOL b
 
 	if ((lpName) && (!strcmp(lpName, "Warcraft III Game Application")))
 		SetLastError(NULL);
+
+	return retval;
+}
+
+DWORD WINAPI StormGetFileSize_Proxy(HANDLE hFile, LPDWORD lpFileSizeHigh)
+{
+	DWORD retval = stdcall<DWORD>(GetProcAddress(hStorm, (LPCSTR)265), hFile, lpFileSizeHigh);
+
+	if (retval)
+	{
+		LPSTR lpFileName = (LPSTR)calloc(MAX_PATH, sizeof(char));
+
+		stdcall<BOOL>(GetProcAddress(hStorm, (LPCSTR)276), hFile, lpFileName, MAX_PATH);
+
+		if (!strcmpi(&lpFileName[strlen(lpFileName) - 4], ".w3x") || !strcmpi(&lpFileName[strlen(lpFileName) - 4], ".w3m"))
+		{
+			free(lpFileName);
+
+			return 1;
+		}
+
+		free(lpFileName);
+	}
 
 	return retval;
 }
